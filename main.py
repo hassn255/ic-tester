@@ -1,63 +1,82 @@
-from flask import Flask, render_template, request, jsonify
-import psycopg2
+from flask import Flask, request, jsonify, send_from_directory
 import os
-import random
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static", static_url_path="/static")
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# -------------------- Database Connection --------------------
+def get_db_conn():
+    """Return a psycopg2 connection or None if DATABASE_URL missing/invalid"""
+    try:
+        DATABASE_URL = os.environ.get("DATABASE_URL")
+        if not DATABASE_URL:
+            print("DATABASE_URL not found")
+            return None
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        return conn
+    except Exception as e:
+        print("DB connection error:", e)
+        return None
 
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
-
+# -------------------- Routes --------------------
 @app.route("/")
-def home():
-    return render_template("index.html")
+def index():
+    return send_from_directory(".", "index.html")
 
 @app.route("/measure", methods=["POST"])
 def measure():
-    data = request.json
+    data = request.get_json()
     ic = data.get("ic")
     ground = data.get("ground")
 
+    # Validate input
     if not ic or ground is None:
-        return jsonify({"status": "error", "msg": "Missing input"})
+        return jsonify({"status": "error", "msg": "IC name or ground missing"}), 400
 
-    # 🔌 Simulated ADC voltages (0–5V)
-    values = [round(random.uniform(0, 5), 2) for _ in range(8)]
+    try:
+        ground = int(ground)
+    except:
+        return jsonify({"status": "error", "msg": "Ground must be an integer"}), 400
 
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO measurements (ic_name, ground_pin, voltages)
-        VALUES (%s, %s, %s)
-        """,
-        (ic, int(ground), values)
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
+    # Dummy measurement logic
+    values = [round(3.3 * i / 7, 2) for i in range(8)]
 
-    return jsonify({
-        "status": "ok",
-        "values": values
-    })
+    # Save to DB safely
+    conn = get_db_conn()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO measurements (ic, ground, values) VALUES (%s, %s, %s)",
+                (ic, ground, values)
+            )
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print("DB insert error:", e)
+
+    return jsonify({"status": "ok", "values": values})
 
 @app.route("/data")
 def data():
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT ic_name, ground_pin, voltages, created_at
-        FROM measurements
-        ORDER BY created_at DESC
-    """)
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
+    conn = get_db_conn()
+    if not conn:
+        return "Database not connected", 500
 
-    return jsonify(rows)
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT ic, ground, values, created_at FROM measurements ORDER BY id DESC")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        print("DB query error:", e)
+        return "Query failed", 500
 
+# -------------------- Run app --------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
