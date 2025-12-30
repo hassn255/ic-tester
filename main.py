@@ -3,7 +3,7 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-app = Flask(__name__, static_folder="static", static_url_path="/static")
+app = Flask(__name__, static_folder="static")
 
 # -------------------- Database Connection --------------------
 def get_db_conn():
@@ -24,13 +24,16 @@ def get_db_conn():
 def index():
     return send_from_directory(".", "index.html")
 
+@app.route("/static/<path:path>")
+def send_static(path):
+    return send_from_directory("static", path)
+
 @app.route("/measure", methods=["POST"])
 def measure():
     data = request.get_json()
     ic = data.get("ic")
     ground = data.get("ground")
 
-    # Validate input
     if not ic or ground is None:
         return jsonify({"status": "error", "msg": "IC name or ground missing"}), 400
 
@@ -39,7 +42,7 @@ def measure():
     except:
         return jsonify({"status": "error", "msg": "Ground must be an integer"}), 400
 
-    # Dummy measurement logic
+    # Dummy measurement values
     values = [round(3.3 * i / 7, 2) for i in range(8)]
 
     # Save to DB safely
@@ -79,4 +82,4 @@ def data():
 # -------------------- Run app --------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False)
