@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IC Tester</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="container">
+    <h1>🔌 ATmega32A IC Tester</h1>
+
+    <input id="ic" type="text" placeholder="Enter IC name">
+    <input id="ground" type="number" min="0" max="7" placeholder="Ground pin (0–7)">
+
+    <button onclick="measure()">Start Measurement</button>
+
+    <div class="status" id="status"></div>
+
+    <table id="table"></table>
+
+    <div class="nav">
+        <a href="/data">📊 View Saved Data</a>
+    </div>
+</div>
+
+<script>
+async function measure() {
+    const ic = document.getElementById("ic").value;
+    const ground = document.getElementById("ground").value;
+    const status = document.getElementById("status");
+
+    if (!ic || ground === "") {
+        status.innerText = "⚠️ Please enter IC name and ground pin";
+        return;
+    }
+
+    status.innerText = "⏳ Measuring...";
+
+    const res = await fetch("/measure", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ic, ground })
+    });
+
+    const data = await res.json();
+
+    if (data.status !== "ok") {
+        status.innerText = "❌ Error: " + data.msg;
+        return;
+    }
+
+    status.innerText = "✔ Measurement completed";
+
+    let html = "<tr><th>Count</th><th>Voltage (V)</th></tr>";
+    for (let i = 0; i < 8; i++) {
+        html += `<tr><td>${i}</td><td>${data.values[i]}</td></tr>`;
+    }
+    document.getElementById("table").innerHTML = html;
+}
+</script>
+
+</body>
+</html>
